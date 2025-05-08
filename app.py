@@ -2,16 +2,17 @@
 
 import re
 import io
+
 import pandas as pd
 import streamlit as st
+import plotly.graph_objects as go
 
 # --- HARD-CODED SETTINGS ---
 START_TIME = pd.to_datetime("2025-04-01 21:53:33")
 FILENAME_PATTERN = re.compile(r"^phantom_p\d+_visibility_and_dose\.csv$")
 
-
 def main():
-    st.title("🔬 Cumulative Dose vs Time")
+    st.title("🔬 Cumulative Dose vs Time (Plotly)")
 
     st.markdown(
         f"""
@@ -30,12 +31,12 @@ def main():
     if not uploaded_files:
         return
 
-    df_all = pd.DataFrame()
+    fig = go.Figure()
     skipped = []
 
     for uploaded in uploaded_files:
         name = uploaded.name
-        # Skip non-matching names
+        # skip non-matching files
         if not FILENAME_PATTERN.fullmatch(name):
             skipped.append(f"{name}: filename does not match pattern")
             continue
@@ -52,32 +53,43 @@ def main():
                 cols[1] if len(cols) > 1 else cols[0]
             )
 
-            # read dose (already cumulative)
+            # read (already cumulative) dose
             dose = df[dose_col].astype(float)
 
-            # detect if time_col is numeric (elapsed seconds) or timestamps
+            # attempt numeric → elapsed seconds
             try:
                 elapsed = df[time_col].astype(float)
-                # numeric => treat as elapsed seconds
                 ts = START_TIME + pd.to_timedelta(elapsed, unit="s")
             except Exception:
-                # not numeric => parse as datetime strings
+                # fallback: parse as datetime strings
                 ts = pd.to_datetime(df[time_col])
 
-            # build series
+            # derive label, e.g. "P3"
             m = re.search(r"p(\d+)", name, re.IGNORECASE)
             label = f"P{m.group(1)}" if m else name
-            series = pd.Series(data=dose.values, index=ts, name=label)
-            df_all = pd.concat([df_all, series], axis=1)
+
+            # add trace
+            fig.add_trace(go.Scatter(
+                x=ts,
+                y=dose,
+                mode="lines+markers",
+                name=label
+            ))
 
         except Exception as e:
             skipped.append(f"{name}: {e}")
 
-    # plot
-    if not df_all.empty:
-        st.line_chart(df_all)
+    fig.update_layout(
+        title="Cumulative Dose vs Time",
+        xaxis_title="Timestamp",
+        yaxis_title="Cumulative Dose",
+        legend_title="Person",
+        template="plotly_white"
+    )
 
-    # report skips
+    # display interactive Plotly chart
+    st.plotly_chart(fig, use_container_width=True)
+
     if skipped:
         st.warning("⚠️ Some files were skipped:\n" + "\n".join(skipped))
 
